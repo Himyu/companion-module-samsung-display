@@ -1,9 +1,9 @@
 {
-	"id": "samsung-display",
-	"name": "samsung-display",
+	"id": "samsung-display-qm",
+	"name": "samsung-display-qm",
 	"legacyIds": [],
-	"version": "0.0.0",
-	"description": "Samsung Display",
+	"version": "1.0.0",
+	"description": "Samsung Display QM",
 	"runtime": {
 		"type": "node18",
 		"api": "nodejs-ipc",
@@ -12,13 +12,13 @@
 	},
 	"keywords": ["Samsung", "Display"],
 	"manufacturer": "Samsung",
-	"products": ["MD Display"],
-	"shortname": "Samsung Display",
+	"products": ["QM Display"],
+	"shortname": "Samsung Display QM",
 	"repository": "git+https://github.com/bitfocus/companion-module-samsung-display.git",
 	"maintainers": [
 		{
-			"name": "Jeffrey Davidsz",
-			"email": "jeffrey.davidsz@vicreo.eu"
+			"name": "Max Bala",
+			"email": "balama@signalforge.de"
 		}
 	],
 	"license": "MIT",

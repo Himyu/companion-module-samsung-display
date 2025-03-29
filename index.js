@@ -1,11 +1,94 @@
 const { InstanceBase, InstanceStatus, TCPHelper, Regex, runEntrypoint } = require('@companion-module/base')
 const { combineRgb } = require('@companion-module/base')
+const { decToHex } = require('hex2dec')
 
 class SamsungDisplayInstance extends InstanceBase {
+	deviceId = '0x01'
+	currentInput = '0x21'
+	powerState = '0x00'
+	videoWallState = '0x00'
+
+	commands = {
+		powerState: (state) =>
+			Buffer.from(
+				[0xaa, 0x11, this.deviceId, 0x01, state, this.calcCheckSum([0x11, this.deviceId, 0x01, state])],
+				'latin1',
+			),
+		getPowerState: () =>
+			new Buffer.from([0xaa, 0x11, this.deviceId, 0x00, this.calcCheckSum([0x11, this.deviceId, 0x00])]),
+		switchInput: (source) =>
+			Buffer.from(
+				[0xaa, 0x14, this.deviceId, 0x01, source, this.calcCheckSum([0x14, this.deviceId, 0x01, source])],
+				'latin1',
+			),
+		getInput: () => new Buffer.from([0xaa, 0x14, this.deviceId, 0x00, this.calcCheckSum([0x14, this.deviceId, 0x00])]),
+		videoWallSate: (state) =>
+			new Buffer.from([0xaa, 0x84, this.deviceId, 0x01, state, this.calcCheckSum([0x84, this.deviceId, 0x01, state])]),
+		getVideoWallSate: () =>
+			new Buffer.from([0xaa, 0x84, this.deviceId, 0x00, this.calcCheckSum([0x84, this.deviceId, 0x00])]),
+	}
+
+	acks = {
+		powerOff: new Buffer.from(
+			[
+				0xaa,
+				0xff,
+				this.deviceId,
+				0x03,
+				0x41,
+				0x11,
+				0x00,
+				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x11, 0x00]),
+			],
+			'latin1',
+		),
+		powerOn: new Buffer.from(
+			[
+				0xaa,
+				0xff,
+				this.deviceId,
+				0x03,
+				0x41,
+				0x11,
+				0x01,
+				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x11, 0x01]),
+			],
+			'latin1',
+		),
+		switchInput: new Buffer.from([0xaa, 0xff, this.deviceId, 0x03, 0x41, 0x14]),
+		videoWallOn: new Buffer.from(
+			[
+				0xaa,
+				0xff,
+				this.deviceId,
+				0x03,
+				0x41,
+				0x84,
+				0x01,
+				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x84, 0x01]),
+			],
+			'latin1',
+		),
+		videoWallOff: new Buffer.from(
+			[
+				0xaa,
+				0xff,
+				this.deviceId,
+				0x03,
+				0x41,
+				0x84,
+				0x00,
+				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x84, 0x00]),
+			],
+			'latin1',
+		),
+	}
+
 	init(config) {
 		this.config = config
-		this.actions() // export actions
+		this.init_actions()
 		this.init_presets()
+		this.init_feedback()
 		this.init_tcp()
 	}
 
@@ -17,6 +100,7 @@ class SamsungDisplayInstance extends InstanceBase {
 			delete this.socket
 		}
 
+		this.deviceId = config.deviceId ? decToHex(config.deviceId.toString()) : '0x01'
 		this.init_tcp()
 	}
 
@@ -42,19 +126,38 @@ class SamsungDisplayInstance extends InstanceBase {
 				self.log('error', 'Network error: ' + err.message)
 			})
 
-			self.socket.on('connect', () => {
+			self.socket.on('connect', async () => {
 				self.log('debug', 'Connected')
+				this.socket.send(this.commands.getInput())
+				setTimeout(() => this.socket.send(this.commands.getPowerState()), 500)
+				setTimeout(() => this.socket.send(this.commands.getVideoWallSate(), 1000))
 			})
 
 			self.socket.on('data', (data) => {
-				// self.log('debug', data)
-				let powerOff = new Buffer.from([0xaa, 0xff, 0x01, 0x03, 0x41, 0x11, 0x00, 0x55], 'latin1')
-				let powerOn = new Buffer.from([0xaa, 0xff, 0x01, 0x03, 0x41, 0x11, 0x01, 0x56], 'latin1')
-				if (Buffer.compare(data, powerOff) === 0) {
+				if (Buffer.compare(data, this.acks.powerOff) === 0) {
 					self.log('info', 'POWER OFF command received by Display')
+					this.powerState = '0x00'
+					this.checkFeedbacks('powerState')
 				}
-				if (Buffer.compare(data, powerOn) === 0) {
+				if (Buffer.compare(data, this.acks.powerOn) === 0) {
 					self.log('info', 'POWER ON command received by Display')
+					this.powerState = '0x01'
+					this.checkFeedbacks('powerState')
+				}
+				if (Buffer.compare(data.slice(0, 6), this.acks.switchInput) === 0) {
+					self.log('info', 'Input Switch command received by Display')
+					this.currentInput = data[data.length - 2]
+					this.checkFeedbacks('source')
+				}
+				if (Buffer.compare(data, this.acks.videoWallOff) === 0 && this.videoWallState !== '0x00') {
+					self.log('info', 'Video Wall OFF command received by Display')
+					this.videoWallState = '0x00'
+					this.checkFeedbacks('videoWallState')
+				}
+				if (Buffer.compare(data, this.acks.videoWallOn) === 0 && this.videoWallState !== '0x01') {
+					self.log('info', 'Video Wall ON command received by Display')
+					this.videoWallState = '0x01'
+					this.checkFeedbacks('videoWallState')
 				}
 			})
 		}
@@ -69,6 +172,14 @@ class SamsungDisplayInstance extends InstanceBase {
 				label: 'Target IP',
 				width: 6,
 				regex: Regex.IP,
+			},
+			{
+				id: 'deviceId',
+				type: 'number',
+				label: 'Device ID',
+				default: 1,
+				min: 0,
+				max: 100,
 			},
 		]
 	}
@@ -92,7 +203,18 @@ class SamsungDisplayInstance extends InstanceBase {
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(0, 0, 0),
 			},
-			steps: [{ down: [{ actionId: 'powerOn' }] }],
+			steps: [
+				{
+					down: [
+						{
+							actionId: 'powerState',
+							options: {
+								state: 0x01,
+							},
+						},
+					],
+				},
+			],
 			feedbacks: [],
 		})
 		presets.push({
@@ -105,26 +227,171 @@ class SamsungDisplayInstance extends InstanceBase {
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(0, 0, 0),
 			},
-			steps: [{ down: [{ actionId: 'powerOff' }] }],
+			steps: [
+				{
+					down: [
+						{
+							actionId: 'powerState',
+							options: {
+								state: 0x00,
+							},
+						},
+					],
+				},
+			],
 			feedbacks: [],
 		})
 		this.setPresetDefinitions(presets)
 	}
 
-	actions(system) {
-		this.setActionDefinitions({
-			powerOn: {
-				name: 'Power On Display',
-				options: [],
-				callback: async (action) => {
-					await this.doAction(action)
+	init_feedback() {
+		this.setFeedbackDefinitions({
+			source: {
+				type: 'boolean',
+				name: 'Source',
+				options: [
+					{
+						id: 'source',
+						type: 'dropdown',
+						label: 'Source',
+						choices: [
+							{ id: 0x60, label: 'MagicInfo' },
+							{ id: 0x21, label: 'HDMI 1' },
+							{ id: 0x23, label: 'HDMI 2' },
+							{ id: 0x31, label: 'HDMI 3' },
+							{ id: 0x25, label: 'DisplayPort' },
+						],
+						default: 0x21,
+					},
+				],
+				defaultStyle: {
+					bgcolor: combineRgb(255, 0, 0),
+					color: combineRgb(0, 0, 0),
+				},
+				callback: (feedback) => {
+					if (parseInt(this.currentInput) === parseInt(feedback.options.source)) {
+						return true
+					} else {
+						return false
+					}
 				},
 			},
-			powerOff: {
-				name: 'Power Off Display',
-				options: [],
+			powerState: {
+				type: 'boolean',
+				name: 'Power State',
+				options: [
+					{
+						id: 'state',
+						type: 'dropdown',
+						label: 'State',
+						choices: [
+							{ id: 0x00, label: 'Off' },
+							{ id: 0x01, label: 'On' },
+						],
+						default: 0x00,
+					},
+				],
+				defaultStyle: {
+					bgcolor: combineRgb(255, 0, 0),
+					color: combineRgb(0, 0, 0),
+				},
+				callback: (feedback) => {
+					if (parseInt(this.powerState) === parseInt(feedback.options.state)) {
+						return true
+					} else {
+						return false
+					}
+				},
+			},
+			videoWallState: {
+				type: 'boolean',
+				name: 'Video Wall State',
+				options: [
+					{
+						id: 'state',
+						type: 'dropdown',
+						label: 'State',
+						choices: [
+							{ id: 0x00, label: 'Off' },
+							{ id: 0x01, label: 'On' },
+						],
+						default: 0x00,
+					},
+				],
+				defaultStyle: {
+					bgcolor: combineRgb(0, 0, 255),
+					color: combineRgb(255, 255, 255),
+				},
+				callback: (feedback) => {
+					if (parseInt(this.videoWallState) === parseInt(feedback.options.state)) {
+						return true
+					} else {
+						return false
+					}
+				},
+			},
+		})
+	}
+
+	init_actions() {
+		this.setActionDefinitions({
+			powerState: {
+				name: 'Power State',
+				description: 'Switch device On or Off',
+				options: [
+					{
+						id: 'state',
+						type: 'dropdown',
+						label: 'Power State',
+						choices: [
+							{ id: 0x00, label: 'Off' },
+							{ id: 0x01, label: 'On' },
+						],
+						default: 0x00,
+					},
+				],
 				callback: async (action) => {
-					await this.doAction(action)
+					this.doAction(action)
+				},
+			},
+			switchInput: {
+				name: 'Switch Input',
+				options: [
+					{
+						id: 'source',
+						type: 'dropdown',
+						label: 'Select Source',
+						choices: [
+							{ id: 0x60, label: 'MagicInfo' },
+							{ id: 0x21, label: 'HDMI 1' },
+							{ id: 0x23, label: 'HDMI 2' },
+							{ id: 0x31, label: 'HDMI 3' },
+							{ id: 0x25, label: 'DisplayPort' },
+						],
+						default: 0x21,
+					},
+				],
+				callback: async (action) => {
+					this.doAction(action)
+				},
+			},
+			ledWallState: {
+				name: 'Video Wall State',
+				description: 'Turn Video Wall feature On or Off',
+				options: [
+					{
+						id: 'state',
+						type: 'dropdown',
+						label: 'State',
+						choices: [
+							{ id: 0x00, label: 'Off' },
+							{ id: 0x01, label: 'On' },
+						],
+						default: 0x00,
+					},
+				],
+				callback: async (action) => {
+					this.doAction(action)
 				},
 			},
 		})
@@ -132,39 +399,26 @@ class SamsungDisplayInstance extends InstanceBase {
 
 	doAction(action) {
 		let cmd
-		let end
 
 		switch (action.actionId) {
-			case 'powerOn':
-				// response aa ff 01 03 41 11 01 56
-				cmd = Buffer.from(
-					['0xAA', '0x11', '0x01', '0x01', '0x01', '0x14', '0xAA', '0x11', '0xFE', '0x01', '0x01', '0x11'],
-					'latin1',
-				)
+			case 'powerState':
+				cmd = this.commands.powerState(action.options.state)
 				break
-			case 'powerOff':
-				// response aa ff 01 03 41 11 00 55
-				cmd = Buffer.from(
-					['0xAA', '0x11', '0x01', '0x01', '0x00', '0x13', '0xAA', '0x11', '0xFE', '0x01', '0x00', '0x10'],
-					'latin1',
-				)
+			case 'switchInput':
+				cmd = this.commands.switchInput(action.options.source)
+				break
+			case 'ledWallState':
+				cmd = this.commands.videoWallSate(action.options.state)
 				break
 			default:
 				this.log('debug', 'unknown action')
 				break
 		}
 
-		/*
-		 * create a binary buffer pre-encoded 'latin1' (8bit no change bytes)
-		 * sending a string assumes 'utf8' encoding
-		 * which then escapes character values over 0x7F
-		 * and destroys the 'binary' content
-		 */
-		// let sendBuf = Buffer.from(cmd + end, 'latin1')
 		let sendBuf = cmd
 
 		if (sendBuf != '') {
-			this.log('debug', 'sending ' + sendBuf + ' to ' + this.config.host)
+			this.log('debug', 'sending ' + sendBuf.toString() + ' to ' + this.config.host)
 
 			if (this.socket !== undefined && this.socket.isConnected) {
 				this.socket.send(sendBuf)
@@ -172,6 +426,11 @@ class SamsungDisplayInstance extends InstanceBase {
 				this.log('debug', 'Socket not connected :(')
 			}
 		}
+	}
+
+	calcCheckSum(vals) {
+		const sum = vals.reduce((p, c) => p + parseInt(c), 0)
+		return '0x' + sum.toString(16).slice(-2)
 	}
 }
 runEntrypoint(SamsungDisplayInstance, [])

@@ -1,4 +1,4 @@
-## Samsung Display MD series
+## Samsung Display QM series
 
 **Available commands in this module**
 
