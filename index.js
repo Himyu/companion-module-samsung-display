@@ -1,12 +1,16 @@
 const { InstanceBase, InstanceStatus, TCPHelper, Regex, runEntrypoint } = require('@companion-module/base')
 const { combineRgb } = require('@companion-module/base')
 const { decToHex } = require('hex2dec')
+const { commandQueue } = require('./src/utils/commandQueue')
 
 class SamsungDisplayInstance extends InstanceBase {
 	deviceId = '0x01'
 	currentInput = '0x21'
 	powerState = '0x00'
 	videoWallState = '0x00'
+	currentVolume = '0x00'
+
+	sendCommand = commandQueue(this._send, 1000)
 
 	commands = {
 		powerState: (state) =>
@@ -14,22 +18,24 @@ class SamsungDisplayInstance extends InstanceBase {
 				[0xaa, 0x11, this.deviceId, 0x01, state, this.calcCheckSum([0x11, this.deviceId, 0x01, state])],
 				'latin1',
 			),
-		getPowerState: () =>
-			new Buffer.from([0xaa, 0x11, this.deviceId, 0x00, this.calcCheckSum([0x11, this.deviceId, 0x00])]),
+		getPowerState: () => Buffer.from([0xaa, 0x11, this.deviceId, 0x00, this.calcCheckSum([0x11, this.deviceId, 0x00])]),
 		switchInput: (source) =>
 			Buffer.from(
 				[0xaa, 0x14, this.deviceId, 0x01, source, this.calcCheckSum([0x14, this.deviceId, 0x01, source])],
 				'latin1',
 			),
-		getInput: () => new Buffer.from([0xaa, 0x14, this.deviceId, 0x00, this.calcCheckSum([0x14, this.deviceId, 0x00])]),
+		getInput: () => Buffer.from([0xaa, 0x14, this.deviceId, 0x00, this.calcCheckSum([0x14, this.deviceId, 0x00])]),
 		videoWallSate: (state) =>
-			new Buffer.from([0xaa, 0x84, this.deviceId, 0x01, state, this.calcCheckSum([0x84, this.deviceId, 0x01, state])]),
+			Buffer.from([0xaa, 0x84, this.deviceId, 0x01, state, this.calcCheckSum([0x84, this.deviceId, 0x01, state])]),
 		getVideoWallSate: () =>
-			new Buffer.from([0xaa, 0x84, this.deviceId, 0x00, this.calcCheckSum([0x84, this.deviceId, 0x00])]),
+			Buffer.from([0xaa, 0x84, this.deviceId, 0x00, this.calcCheckSum([0x84, this.deviceId, 0x00])]),
+		setVolume: (volume) =>
+			Buffer.from([0xaa, 0x12, this.deviceId, 0x01, volume, this.calcCheckSum([0x12, this.deviceId, 0x01, volume])]),
+		getVolume: () => Buffer.from([0xaa, 0x12, this.deviceId, 0x00, this.calcCheckSum([0x12, this.deviceId, 0x00])]),
 	}
 
 	acks = {
-		powerOff: new Buffer.from(
+		powerOff: Buffer.from(
 			[
 				0xaa,
 				0xff,
@@ -42,7 +48,7 @@ class SamsungDisplayInstance extends InstanceBase {
 			],
 			'latin1',
 		),
-		powerOn: new Buffer.from(
+		powerOn: Buffer.from(
 			[
 				0xaa,
 				0xff,
@@ -55,8 +61,8 @@ class SamsungDisplayInstance extends InstanceBase {
 			],
 			'latin1',
 		),
-		switchInput: new Buffer.from([0xaa, 0xff, this.deviceId, 0x03, 0x41, 0x14]),
-		videoWallOn: new Buffer.from(
+		switchInput: Buffer.from([0xaa, 0xff, this.deviceId, 0x03, 0x41, 0x14], 'latin1'),
+		videoWallOn: Buffer.from(
 			[
 				0xaa,
 				0xff,
@@ -69,7 +75,7 @@ class SamsungDisplayInstance extends InstanceBase {
 			],
 			'latin1',
 		),
-		videoWallOff: new Buffer.from(
+		videoWallOff: Buffer.from(
 			[
 				0xaa,
 				0xff,
@@ -82,6 +88,7 @@ class SamsungDisplayInstance extends InstanceBase {
 			],
 			'latin1',
 		),
+		setVolume: Buffer.from([0xaa, 0xff, this.deviceId, 0x03, 0x41, 0x12], 'latin1'),
 	}
 
 	init(config) {
@@ -128,12 +135,14 @@ class SamsungDisplayInstance extends InstanceBase {
 
 			self.socket.on('connect', async () => {
 				self.log('debug', 'Connected')
-				this.socket.send(this.commands.getInput())
-				setTimeout(() => this.socket.send(this.commands.getPowerState()), 500)
-				setTimeout(() => this.socket.send(this.commands.getVideoWallSate(), 1000))
+				this.sendCommand(this.commands.getInput())
+				this.sendCommand(this.commands.getVideoWallSate())
+				this.sendCommand(this.commands.getVolume())
+				this.sendCommand(this.commands.getPowerState())
 			})
 
 			self.socket.on('data', (data) => {
+				// this.log('debug', data)
 				if (Buffer.compare(data, this.acks.powerOff) === 0) {
 					self.log('info', 'POWER OFF command received by Display')
 					this.powerState = '0x00'
@@ -148,6 +157,11 @@ class SamsungDisplayInstance extends InstanceBase {
 					self.log('info', 'Input Switch command received by Display')
 					this.currentInput = data[data.length - 2]
 					this.checkFeedbacks('source')
+				}
+				if (Buffer.compare(data.slice(0, 6), this.acks.setVolume) === 0) {
+					self.log('info', 'Volume command received by Display')
+					this.currentVolume = data[data.length - 2]
+					this.checkFeedbacks('volume')
 				}
 				if (Buffer.compare(data, this.acks.videoWallOff) === 0 && this.videoWallState !== '0x00') {
 					self.log('info', 'Video Wall OFF command received by Display')
@@ -276,6 +290,31 @@ class SamsungDisplayInstance extends InstanceBase {
 					}
 				},
 			},
+			volume: {
+				type: 'boolean',
+				name: 'Volume',
+				options: [
+					{
+						id: 'volume',
+						type: 'number',
+						min: 0,
+						max: 100,
+						label: 'Volume',
+						default: 0,
+					},
+				],
+				defaultStyle: {
+					bgcolor: combineRgb(255, 255, 0),
+					color: combineRgb(0, 0, 0),
+				},
+				callback: (feedback) => {
+					if (parseInt(this.currentVolume) === parseInt(feedback.options.volume)) {
+						return true
+					} else {
+						return false
+					}
+				},
+			},
 			powerState: {
 				type: 'boolean',
 				name: 'Power State',
@@ -375,6 +414,20 @@ class SamsungDisplayInstance extends InstanceBase {
 					this.doAction(action)
 				},
 			},
+			setVolume: {
+				name: 'Set Volume',
+				options: [
+					{
+						id: 'volume',
+						type: 'number',
+						label: 'Volume',
+						default: 0,
+					},
+				],
+				callback: async (action) => {
+					this.doAction(action)
+				},
+			},
 			ledWallState: {
 				name: 'Video Wall State',
 				description: 'Turn Video Wall feature On or Off',
@@ -410,6 +463,9 @@ class SamsungDisplayInstance extends InstanceBase {
 			case 'ledWallState':
 				cmd = this.commands.videoWallSate(action.options.state)
 				break
+			case 'setVolume':
+				cmd = this.commands.setVolume(decToHex(action.options.volume.toString()))
+				break
 			default:
 				this.log('debug', 'unknown action')
 				break
@@ -418,14 +474,18 @@ class SamsungDisplayInstance extends InstanceBase {
 		let sendBuf = cmd
 
 		if (sendBuf != '') {
-			this.log('debug', 'sending ' + sendBuf.toString() + ' to ' + this.config.host)
-
-			if (this.socket !== undefined && this.socket.isConnected) {
-				this.socket.send(sendBuf)
-			} else {
-				this.log('debug', 'Socket not connected :(')
-			}
+			this.sendCommand(sendBuf)
 		}
+	}
+
+	_send(buffer) {
+		if (this.socket === undefined || !this.socket.isConnected) {
+			this.log('debug', 'Socket not connected :(')
+			return
+		}
+
+		this.log('debug', 'sending ' + buffer + ' to ' + this.config.host)
+		this.socket.send(buffer)
 	}
 
 	calcCheckSum(vals) {
