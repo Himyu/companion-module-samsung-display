@@ -11,7 +11,7 @@
 		"type": "git",
 		"url": "git+https://github.com/bitfocus/companion-module-samsung-display.git"
 	},
-	"author": "Jeffrey Davidsz <jeffrey.davidsz@vicreo.eu>",
+	"author": "Max Bala <bala@signalforge.de>",
 	"license": "MIT",
 	"dependencies": {
 		"@companion-module/base": "~1.11.0",
