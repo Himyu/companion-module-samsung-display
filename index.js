@@ -13,86 +13,49 @@ class SamsungDisplayInstance extends InstanceBase {
 	sendCommand = commandQueue(this._send, 1000)
 
 	commands = {
-		powerState: (state) =>
-			Buffer.from(
-				[0xaa, 0x11, this.deviceId, 0x01, state, this.calcCheckSum([0x11, this.deviceId, 0x01, state])],
-				'latin1',
-			),
-		getPowerState: () => Buffer.from([0xaa, 0x11, this.deviceId, 0x00, this.calcCheckSum([0x11, this.deviceId, 0x00])]),
-		switchInput: (source) =>
-			Buffer.from(
-				[0xaa, 0x14, this.deviceId, 0x01, source, this.calcCheckSum([0x14, this.deviceId, 0x01, source])],
-				'latin1',
-			),
-		getInput: () => Buffer.from([0xaa, 0x14, this.deviceId, 0x00, this.calcCheckSum([0x14, this.deviceId, 0x00])]),
-		videoWallSate: (state) =>
-			Buffer.from([0xaa, 0x84, this.deviceId, 0x01, state, this.calcCheckSum([0x84, this.deviceId, 0x01, state])]),
-		getVideoWallSate: () =>
-			Buffer.from([0xaa, 0x84, this.deviceId, 0x00, this.calcCheckSum([0x84, this.deviceId, 0x00])]),
-		setVolume: (volume) =>
-			Buffer.from([0xaa, 0x12, this.deviceId, 0x01, volume, this.calcCheckSum([0x12, this.deviceId, 0x01, volume])]),
-		getVolume: () => Buffer.from([0xaa, 0x12, this.deviceId, 0x00, this.calcCheckSum([0x12, this.deviceId, 0x00])]),
+		powerState: (state, id = this.deviceId) =>
+			Buffer.from([0xaa, 0x11, id, 0x01, state, this.calcCheckSum([0x11, id, 0x01, state])], 'latin1'),
+		getPowerState: (id = this.deviceId) => Buffer.from([0xaa, 0x11, id, 0x00, this.calcCheckSum([0x11, id, 0x00])]),
+		switchInput: (source, id = this.deviceId) =>
+			Buffer.from([0xaa, 0x14, id, 0x01, source, this.calcCheckSum([0x14, id, 0x01, source])], 'latin1'),
+		getInput: (id = this.deviceId) => Buffer.from([0xaa, 0x14, id, 0x00, this.calcCheckSum([0x14, id, 0x00])]),
+		videoWallSate: (state, id = this.deviceId) =>
+			Buffer.from([0xaa, 0x84, id, 0x01, state, this.calcCheckSum([0x84, id, 0x01, state])]),
+		getVideoWallSate: (id = this.deviceId) => Buffer.from([0xaa, 0x84, id, 0x00, this.calcCheckSum([0x84, id, 0x00])]),
+		setVolume: (volume, id = this.deviceId) =>
+			Buffer.from([0xaa, 0x12, id, 0x01, volume, this.calcCheckSum([0x12, id, 0x01, volume])]),
+		getVolume: (id = this.deviceId) => Buffer.from([0xaa, 0x12, id, 0x00, this.calcCheckSum([0x12, id, 0x00])]),
 	}
 
 	acks = {
-		powerOff: Buffer.from(
-			[
-				0xaa,
-				0xff,
-				this.deviceId,
-				0x03,
-				0x41,
-				0x11,
-				0x00,
-				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x11, 0x00]),
-			],
-			'latin1',
-		),
-		powerOn: Buffer.from(
-			[
-				0xaa,
-				0xff,
-				this.deviceId,
-				0x03,
-				0x41,
-				0x11,
-				0x01,
-				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x11, 0x01]),
-			],
-			'latin1',
-		),
-		switchInput: Buffer.from([0xaa, 0xff, this.deviceId, 0x03, 0x41, 0x14], 'latin1'),
-		videoWallOn: Buffer.from(
-			[
-				0xaa,
-				0xff,
-				this.deviceId,
-				0x03,
-				0x41,
-				0x84,
-				0x01,
-				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x84, 0x01]),
-			],
-			'latin1',
-		),
-		videoWallOff: Buffer.from(
-			[
-				0xaa,
-				0xff,
-				this.deviceId,
-				0x03,
-				0x41,
-				0x84,
-				0x00,
-				this.calcCheckSum([0xff, this.deviceId, 0x03, 0x41, 0x84, 0x00]),
-			],
-			'latin1',
-		),
-		setVolume: Buffer.from([0xaa, 0xff, this.deviceId, 0x03, 0x41, 0x12], 'latin1'),
+		powerOff: (id = this.deviceId) =>
+			Buffer.from(
+				[0xaa, 0xff, id, 0x03, 0x41, 0x11, 0x00, this.calcCheckSum([0xff, id, 0x03, 0x41, 0x11, 0x00])],
+				'latin1',
+			),
+		powerOn: (id = this.deviceId) =>
+			Buffer.from(
+				[0xaa, 0xff, id, 0x03, 0x41, 0x11, 0x01, this.calcCheckSum([0xff, id, 0x03, 0x41, 0x11, 0x01])],
+				'latin1',
+			),
+		switchInput: (id = this.deviceId) => Buffer.from([0xaa, 0xff, id, 0x03, 0x41, 0x14], 'latin1'),
+		videoWallOn: (id = this.deviceId) =>
+			Buffer.from(
+				[0xaa, 0xff, id, 0x03, 0x41, 0x84, 0x01, this.calcCheckSum([0xff, id, 0x03, 0x41, 0x84, 0x01])],
+				'latin1',
+			),
+		videoWallOff: (id = this.deviceId) =>
+			Buffer.from(
+				[0xaa, 0xff, id, 0x03, 0x41, 0x84, 0x00, this.calcCheckSum([0xff, id, 0x03, 0x41, 0x84, 0x00])],
+				'latin1',
+			),
+		setVolume: (id = this.deviceId) => Buffer.from([0xaa, 0xff, id, 0x03, 0x41, 0x12], 'latin1'),
 	}
 
 	init(config) {
 		this.config = config
+		this.deviceId = config.deviceId ? decToHex(config.deviceId.toString()) : '0x01'
+
 		this.init_actions()
 		this.init_presets()
 		this.init_feedback()
@@ -143,32 +106,32 @@ class SamsungDisplayInstance extends InstanceBase {
 
 			self.socket.on('data', (data) => {
 				// this.log('debug', data)
-				if (Buffer.compare(data, this.acks.powerOff) === 0) {
+				if (Buffer.compare(data, this.acks.powerOff()) === 0) {
 					self.log('info', 'POWER OFF command received by Display')
 					this.powerState = '0x00'
 					this.checkFeedbacks('powerState')
 				}
-				if (Buffer.compare(data, this.acks.powerOn) === 0) {
+				if (Buffer.compare(data, this.acks.powerOn()) === 0) {
 					self.log('info', 'POWER ON command received by Display')
 					this.powerState = '0x01'
 					this.checkFeedbacks('powerState')
 				}
-				if (Buffer.compare(data.slice(0, 6), this.acks.switchInput) === 0) {
+				if (Buffer.compare(data.slice(0, 6), this.acks.switchInput()) === 0) {
 					self.log('info', 'Input Switch command received by Display')
 					this.currentInput = data[data.length - 2]
 					this.checkFeedbacks('source')
 				}
-				if (Buffer.compare(data.slice(0, 6), this.acks.setVolume) === 0) {
+				if (Buffer.compare(data.slice(0, 6), this.acks.setVolume()) === 0) {
 					self.log('info', 'Volume command received by Display')
 					this.currentVolume = data[data.length - 2]
 					this.checkFeedbacks('volume')
 				}
-				if (Buffer.compare(data, this.acks.videoWallOff) === 0 && this.videoWallState !== '0x00') {
+				if (Buffer.compare(data, this.acks.videoWallOff()) === 0 && this.videoWallState !== '0x00') {
 					self.log('info', 'Video Wall OFF command received by Display')
 					this.videoWallState = '0x00'
 					this.checkFeedbacks('videoWallState')
 				}
-				if (Buffer.compare(data, this.acks.videoWallOn) === 0 && this.videoWallState !== '0x01') {
+				if (Buffer.compare(data, this.acks.videoWallOn()) === 0 && this.videoWallState !== '0x01') {
 					self.log('info', 'Video Wall ON command received by Display')
 					this.videoWallState = '0x01'
 					this.checkFeedbacks('videoWallState')
@@ -472,6 +435,7 @@ class SamsungDisplayInstance extends InstanceBase {
 		}
 
 		let sendBuf = cmd
+		console.log(sendBuf.toJSON())
 
 		if (sendBuf != '') {
 			this.sendCommand(sendBuf)
